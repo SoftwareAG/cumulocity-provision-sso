@@ -60,7 +60,8 @@ public class SSOService {
            if ( bootstrapRestConnector == null ) {
                 bootstrapRestConnector = this.restConnector.getPlatformParameters().createRestConnector();
            }
-           Response resp = bootstrapRestConnector.get("/tenant/tenants/" + tenant, MediaType.APPLICATION_JSON_TYPE);
+           //Response resp = bootstrapRestConnector.get("/tenant/tenants/" + tenant, MediaType.APPLICATION_JSON_TYPE);
+           Response resp = bootstrapRestConnector.get("/tenant/currentTenant", MediaType.APPLICATION_JSON_TYPE);
            String output = resp.readEntity(String.class);
            LOG.info("Details for tenant: {}", output);
 
