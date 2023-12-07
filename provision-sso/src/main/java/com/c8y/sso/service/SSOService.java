@@ -1,7 +1,9 @@
 package com.c8y.sso.service;
 
+import java.util.List;
 import java.util.Map;
 
+import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
@@ -62,8 +64,11 @@ public class SSOService {
            }
            //Response resp = bootstrapRestConnector.get("/tenant/tenants/" + tenant, MediaType.APPLICATION_JSON_TYPE);
            Response resp = bootstrapRestConnector.get("/tenant/currentTenant", MediaType.APPLICATION_JSON_TYPE);
-           String output = resp.readEntity(String.class);
-           LOG.info("Details for tenant: {}", output);
+           List<Map<String, Object>> json = resp.readEntity(new GenericType<List<Map<String, Object>>>() {});
+           String domainName = (String) json.get(0).get("domainName");
+           LOG.info("Details for tenant: {}", domainName);
+           //String response = resp.readEntity(String.class);
+           //LOG.info("Details for tenant: {}", output);
 
             String ssoString = "{\n" +
                     "  \"issuer\": \"https://sts.onko.net/dummy/\",\n" +
