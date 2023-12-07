@@ -1,0 +1,41 @@
+{
+	"apiVersion": "2",
+	"version": "@project.version@",
+	"provider": {
+		"name": "Cumulocity GmbH"
+	},
+	"isolation": "MULTI_TENANT",
+	"resources": {
+        "cpu": "1",
+        "memory": "1024M"
+    },
+	"requiredRoles": [
+		"ROLE_INVENTORY_READ",
+		"ROLE_INVENTORY_CREATE",
+		"ROLE_INVENTORY_ADMIN",
+		"ROLE_EVENT_READ",
+		"ROLE_EVENT_ADMIN",
+		"ROLE_OPTION_MANAGEMENT_READ",
+		"ROLE_OPTION_MANAGEMENT_ADMIN",
+		"ROLE_TENANT_ADMIN",
+		"ROLE_TENANT_MANAGEMENT_READ"
+	],
+	"roles": [
+	],
+	"livenessProbe": {
+		"httpGet": {
+			"path": "/health",
+			"port": 80
+		},
+		"initialDelaySeconds": 30,
+		"periodSeconds": 10
+	},
+	"readinessProbe": {
+		"httpGet": {
+			"path": "/health",
+			"port": 80
+		},
+		"initialDelaySeconds": 10,
+		"periodSeconds": 10
+	}
+}
