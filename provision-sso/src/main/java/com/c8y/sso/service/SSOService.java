@@ -50,8 +50,6 @@ public class SSOService {
 
     private static final String REDIRECT_TO_PLATFORM = "redirectToPlatform";
     private static final Logger LOG = LoggerFactory.getLogger(SSOService.class);
-    private static final String DEFAULT_BOOSTRAP_TENANT = "t14070519";
-    private static final String C8Y_BOOTSTRAP_TENANT = "C8Y_BOOTSTRAP_TENANT";
     private static final Object TEMPLATE_ID = "id";
 
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -81,10 +79,7 @@ public class SSOService {
     @EventListener
     public void initialize(MicroserviceSubscriptionAddedEvent event) {
         String tenant = event.getCredentials().getTenant();
-        String tenantFromConnector = this.restConnector.getPlatformParameters().getCumulocityCredentials()
-                .getTenantId();
-        LOG.info("New subscription tenant / tenantFromConnector / bootstrapTenant: {} / {} / {}", tenant,
-                tenantFromConnector, bootstrapTeannt);
+        LOG.info("New subscription tenant / bootstrapTenant: {} / {} ", tenant, bootstrapTeannt);
 
         try {
             if (!bootstrapTeannt.equals(tenant)) {
