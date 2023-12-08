@@ -86,14 +86,14 @@ public class SSOService {
                 try {
                     Map<String, Object> loginOptionsFromTenant = getLoginOptionsFromTenant(tenant);
                     if (loginOptionsFromTenant == null) {
-                        writeLoginOptionsToTenant(getDomainName(), loginOptionsFromBoostrap);
+                        writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
                     } else {
                         LOG.info("Option loginOptions exist in tenant {} {}. Do nothing!", tenant,
                                 loginOptionsFromTenant);
                     }
                 } catch (Exception e) {
                     LOG.info("Ready to provision sso in new tenant!");
-                    writeLoginOptionsToTenant(getDomainName(), loginOptionsFromBoostrap);
+                    writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
                 }
             } else {
                 LOG.info("Susbcription from bootstrapTenant. Do nothing!");
@@ -124,24 +124,31 @@ public class SSOService {
         final RestConnector restConnectorInjected = this.restConnector;
 
         // update loginOptions
-        loginOptions.put(REDIRECT_TO_PLATFORM, "https://" + tenant + "/tenant/oauth");
-        loginOptions.remove(TEMPLATE_ID);
+        loginOptions.put(REDIRECT_TO_PLATFORM, "https://" + getDomainName() + "/tenant/oauth");
+        loginOptions.remove(TEMPLATE_ID); 
+        loginOptions.remove("self");
+
         String loginOptionsString;
         try {
             loginOptionsString = objectMapper.writeValueAsString(loginOptions);
-            LOG.info("Reardy to write loginOption to new tenant: {}", loginOptionsString);
+            LOG.info("Ready to write loginOption to new tenant: {}", loginOptionsString);
 
             subscriptions.callForTenant(tenant,
                     new Callable<String>() {
                         @Override
                         public String call() throws Exception {
-                            ResourceRepresentation resp = restConnectorInjected.postText("/tenant/loginOptions/OAUTH2",
-                                    loginOptionsString, ResourceRepresentation.class);
+                            try {
+                                LOG.info("Preparing to write provision sso to new tenant.");
+                                ResourceRepresentation resp = restConnectorInjected.postText("/tenant/loginOptions/OAUTH2",
+                                        loginOptionsString, ResourceRepresentation.class);
+                                LOG.info("Response from writting provision sso to new tenant: {}", resp.toString());
+                            } catch (Exception e) {
+                                LOG.error("Exception writting provision sso to new tenant: {}", e.getMessage());
+                                e.printStackTrace();
+                            }
                             return "success";
                         }
                     });
-
-            // Object providerName = loginOptionsFromTenant.get("providerName");
             LOG.info("Wrote provision sso to new tenant: {}", getDomainName());
         } catch (JsonProcessingException e) {
             LOG.error("Serializing LoginOptions failed: {}", e.getMessage());
