@@ -6,7 +6,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 
-import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
@@ -19,6 +18,7 @@ import org.springframework.web.util.HtmlUtils;
 
 import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionAddedEvent;
 import com.cumulocity.microservice.subscription.service.MicroserviceSubscriptionsService;
+import com.cumulocity.rest.representation.ResourceRepresentation;
 import com.cumulocity.rest.representation.inventory.ManagedObjectRepresentation;
 import com.cumulocity.rest.representation.tenant.OptionRepresentation;
 import com.cumulocity.sdk.client.PagingParam;
@@ -44,10 +44,11 @@ import c8y.IsDevice;
 @Service
 public class SSOService {
 
+    private static final String REDIRECT_TO_PLATFORM = "redirectToPlatform";
     private static final Logger LOG = LoggerFactory.getLogger(SSOService.class);
     private static final String DEFAULT_BOOSTRAP_TENANT = "t14070519";
     private static final String C8Y_BOOTSTRAP_TENANT = "C8Y_BOOTSTRAP_TENANT";
-    private static final String OAUTH_TEMPLATE_NAME = "OAuth0";
+    private static final Object TEMPLATE_ID = "id";
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -84,16 +85,15 @@ public class SSOService {
                 // providerNameFromBootstrap);
                 try {
                     Map<String, Object> loginOptionsFromTenant = getLoginOptionsFromTenant(tenant);
-                    String templateName = loginOptionsFromTenant.get("template").toString();
-                    if (!OAUTH_TEMPLATE_NAME.equals(templateName)) {
-                        writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
+                    if (loginOptionsFromTenant == null) {
+                        writeLoginOptionsToTenant(getDomainName(), loginOptionsFromBoostrap);
                     } else {
                         LOG.info("Option loginOptions exist in tenant {} {}. Do nothing!", tenant,
                                 loginOptionsFromTenant);
                     }
                 } catch (Exception e) {
                     LOG.info("Ready to provision sso in new tenant!");
-                    writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
+                    writeLoginOptionsToTenant(getDomainName(), loginOptionsFromBoostrap);
                 }
             } else {
                 LOG.info("Susbcription from bootstrapTenant. Do nothing!");
@@ -120,9 +120,32 @@ public class SSOService {
         return domainName;
     }
 
-    private void writeLoginOptionsToTenant(String tenant, Map<String, Object> loginOptionsFromBoostrap) {
-        // Object providerName = loginOptionsFromTenant.get("providerName");
-        LOG.info("Wrote provision sso to new tenant: {}", getDomainName());
+    private void writeLoginOptionsToTenant(String tenant, Map<String, Object> loginOptions) {
+        final RestConnector restConnectorInjected = this.restConnector;
+
+        // update loginOptions
+        loginOptions.put(REDIRECT_TO_PLATFORM, "https://" + tenant + "/tenant/oauth");
+        loginOptions.remove(TEMPLATE_ID);
+        String loginOptionsString;
+        try {
+            loginOptionsString = objectMapper.writeValueAsString(loginOptions);
+            LOG.info("Reardy to write loginOption to new tenant: {}", loginOptionsString);
+
+            subscriptions.callForTenant(tenant,
+                    new Callable<String>() {
+                        @Override
+                        public String call() throws Exception {
+                            ResourceRepresentation resp = restConnectorInjected.postText("/tenant/loginOptions/OAUTH2",
+                                    loginOptionsString, ResourceRepresentation.class);
+                            return "success";
+                        }
+                    });
+
+            // Object providerName = loginOptionsFromTenant.get("providerName");
+            LOG.info("Wrote provision sso to new tenant: {}", getDomainName());
+        } catch (JsonProcessingException e) {
+            LOG.error("Serializing LoginOptions failed: {}", e.getMessage());
+        }
     }
 
     private void listTenantOptions() {
@@ -165,10 +188,14 @@ public class SSOService {
                                 MediaType.APPLICATION_JSON_TYPE);
                         String respString = resp.readEntity(String.class);
                         Map<String, Object> respMap = objectMapper.readValue(respString,
-                                        new TypeReference<Map<String, Object>>() {
-                                        });
+                                new TypeReference<Map<String, Object>>() {
+                                });
                         String templateName = respMap.get("template").toString();
                         LOG.info("Returned loginOptions: {} {}", resp.getStatus(), templateName);
+                        if (resp.getStatus() == 404) {
+                            LOG.info("No OAuth2 template found!");
+                            respMap = null;
+                        }
                         return respMap;
                     }
                 });
