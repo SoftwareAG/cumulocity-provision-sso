@@ -64,16 +64,13 @@ public class SSOService {
     public void initialize(MicroserviceSubscriptionAddedEvent event) {
         // Executed for each tenant subscribed
         String tenant = event.getCredentials().getTenant();
-        LOG.info("Subscription from tenant: {}", tenant);
-        String tenantIdFromConnector = this.restConnector.getPlatformParameters().getCumulocityCredentials()
+        String tenantFromConnector = this.restConnector.getPlatformParameters().getCumulocityCredentials()
                 .getTenantId();
-        LOG.info("TenantId from restConnector: {}", tenantIdFromConnector);
-
-        String tenantBootstrap = getEnv(C8Y_BOOTSTRAP_TENANT, DEFAULT_BOOSTRAP_TENANT);
-        LOG.info("Bootstrap tenant from environment: {}", tenantBootstrap);
+        String bootstrapTenant = getEnv(C8Y_BOOTSTRAP_TENANT, DEFAULT_BOOSTRAP_TENANT);
+        LOG.info("New subscription tenant / tenantFromConnector / bootstrapTenant: {} / {} / {}", tenant, tenantFromConnector, bootstrapTenant);
 
         try {
-            if (!tenantBootstrap.equals(tenant)) {
+            if (!bootstrapTenant.equals(tenant)) {
                 List<OptionRepresentation> entireOptionsList = new ArrayList<>();
                 TenantOptionCollection tenantOptionCollection = platformApi.getTenantOptionApi().getOptions();
                 PagedTenantOptionCollectionRepresentation pagedTenantOptions = tenantOptionCollection.get(1,
@@ -84,7 +81,7 @@ public class SSOService {
                 });
 
                 final RestConnector restConnectorInjected = this.restConnector;
-                subscriptions.callForTenant(tenantBootstrap, new Callable<Object>() {
+                Object providerNameFromBootstrap =subscriptions.callForTenant(bootstrapTenant, new Callable<Object>() {
                     @Override
                     public Object call() throws Exception {
                         Response resp = restConnectorInjected.get("/tenant/loginOptions/OAUTH2",
@@ -97,14 +94,15 @@ public class SSOService {
                         return providerName;
                     }
                 });
+                LOG.info("OAUTH2 providerName from bootstrapTenant: {}", providerNameFromBootstrap);
+
             } else {
                 final RestConnector restConnectorInternal = this.restConnector.getPlatformParameters()
                         .createRestConnector();
-                final RestConnector restConnectorInjected = this.restConnector;
                 if (restConnectorInternal == null) {
                     LOG.info("Something is wrong with restConnectorInternal, is null!");
                 } else {
-                    Object providerName = subscriptions.callForTenant(tenantBootstrap, new Callable<Object>() {
+                    Object providerName = subscriptions.callForTenant(bootstrapTenant, new Callable<Object>() {
                         @Override
                         public Object call() throws Exception {
                             Response resp = restConnectorInternal.get("/tenant/loginOptions/OAUTH2",
