@@ -5,7 +5,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -20,14 +19,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.HtmlUtils;
 
-import com.cumulocity.microservice.context.ContextService;
-import com.cumulocity.microservice.context.credentials.UserCredentials;
 import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionAddedEvent;
 import com.cumulocity.microservice.subscription.service.MicroserviceSubscriptionsService;
-import com.cumulocity.rest.representation.ResourceRepresentation;
 import com.cumulocity.rest.representation.inventory.ManagedObjectRepresentation;
 import com.cumulocity.rest.representation.tenant.OptionRepresentation;
 import com.cumulocity.sdk.client.PagingParam;
@@ -68,8 +63,7 @@ public class SSOService {
 
     @Autowired
     private RestConnector restConnector;
-    @Autowired
-    private ContextService<UserCredentials> contextService;
+
     @Value("${C8Y.baseURL}")
     private String baseUrl;
 
@@ -92,10 +86,6 @@ public class SSOService {
             if (!getBootstrapTenant().equals(tenant)) {
                 listTenantOptions();
                 Map<String, Object> loginOptionsFromBoostrap = getLoginOptionsFromTenant(getBootstrapTenant());
-                // Object providerNameFromBootstrap =
-                // loginOptionsFromBoostrap.get("providerName");
-                // LOG.info("OAUTH2 providerName from bootstrapTenant: {}",
-                // providerNameFromBootstrap);
                 try {
                     Map<String, Object> loginOptionsFromTenant = getLoginOptionsFromTenant(tenant);
                     if (loginOptionsFromTenant == null) {
@@ -134,38 +124,34 @@ public class SSOService {
     }
 
     private void writeLoginOptionsToTenant(String tenant, Map<String, Object> loginOptions) {
-        final RestConnector restConnectorInjected = this.restConnector;
-
         // update loginOptions
         loginOptions.put(REDIRECT_TO_PLATFORM, "https://" + getDomainName() + "/tenant/oauth");
-        loginOptions.remove(TEMPLATE_ID); 
+        loginOptions.remove(TEMPLATE_ID);
         loginOptions.remove("self");
 
         String loginOptionsString;
         try {
             loginOptionsString = objectMapper.writeValueAsString(loginOptions);
             LOG.info("Ready to write loginOption to new tenant: {}", loginOptionsString);
-
             subscriptions.callForTenant(tenant,
                     new Callable<String>() {
                         @Override
                         public String call() throws Exception {
                             try {
                                 LOG.info("Preparing to write provision sso to new tenant.");
-                                String password = contextService.getContext().getPassword();
-                                String username = contextService.getContext().getUsername();
                                 String postUrl = baseUrl + "/tenant/loginOptions/OAUTH2";
-                                String connection = "Basic " + tenant + "/" + username  + ":" + password;
-                                String base64ConnectionString = Base64.getEncoder().encodeToString(connection.getBytes("UTF-8"));
                                 HttpRequest postRequest = HttpRequest.newBuilder()
-                                .uri(URI.create((postUrl)))
-                                .headers("Authorization", base64ConnectionString,
-                                        "Accept", "application/json", 
-                                        "Content-Type", "application/json")
-                                .POST(HttpRequest.BodyPublishers.ofString(loginOptionsString))
-                                .build();
+                                        .uri(URI.create((postUrl)))
+                                        .headers("Authorization",
+                                                subscriptions.getCredentials(subscriptions.getTenant())
+                                                        .get().toCumulocityCredentials().getAuthenticationString(),
+                                                "Accept", "application/json",
+                                                "Content-Type", "application/json")
+                                        .POST(HttpRequest.BodyPublishers.ofString(loginOptionsString))
+                                        .build();
                                 HttpClient httpClient = HttpClient.newHttpClient();
-                                HttpResponse<String> resp = httpClient.send(postRequest, HttpResponse.BodyHandlers.ofString());
+                                HttpResponse<String> resp = httpClient.send(postRequest,
+                                        HttpResponse.BodyHandlers.ofString());
                                 LOG.info("Response from writting provision sso to new tenant: {}", resp.toString());
                             } catch (Exception e) {
                                 LOG.error("Exception writting provision sso to new tenant: {}", e.getMessage());
