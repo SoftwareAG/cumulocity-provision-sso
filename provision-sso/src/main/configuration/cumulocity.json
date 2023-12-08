@@ -6,8 +6,8 @@
 	},
 	"isolation": "MULTI_TENANT",
 	"resources": {
-        "cpu": "1",
-        "memory": "1024M"
+        "cpu": "0.125",
+        "memory": "512M"
     },
 	"requiredRoles": [
 		"ROLE_INVENTORY_READ",

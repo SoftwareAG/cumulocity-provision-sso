@@ -67,6 +67,10 @@ public class SSOService {
     @Value("${C8Y.baseURL}")
     private String baseUrl;
 
+
+    @Value("${C8Y.bootstrap.tenant}")
+    private String bootstrapTeannt;
+
     private final MicroserviceSubscriptionsService subscriptions;
 
     public SSOService(InventoryApi inventoryApi, MicroserviceSubscriptionsService subscriptions) {
@@ -80,18 +84,18 @@ public class SSOService {
         String tenantFromConnector = this.restConnector.getPlatformParameters().getCumulocityCredentials()
                 .getTenantId();
         LOG.info("New subscription tenant / tenantFromConnector / bootstrapTenant: {} / {} / {}", tenant,
-                tenantFromConnector, getBootstrapTenant());
+                tenantFromConnector, bootstrapTeannt);
 
         try {
-            if (!getBootstrapTenant().equals(tenant)) {
-                listTenantOptions();
-                Map<String, Object> loginOptionsFromBoostrap = getLoginOptionsFromTenant(getBootstrapTenant());
+            if (!bootstrapTeannt.equals(tenant)) {
+                //listTenantOptions();
+                Map<String, Object> loginOptionsFromBoostrap = getLoginOptionsFromTenant(bootstrapTeannt);
                 try {
                     Map<String, Object> loginOptionsFromTenant = getLoginOptionsFromTenant(tenant);
                     if (loginOptionsFromTenant == null) {
                         writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
                     } else {
-                        LOG.info("Option loginOptions exist in tenant {} {}. Do nothing!", tenant,
+                        LOG.debug("Option loginOptions exist in tenant {} {}. Do nothing!", tenant,
                                 loginOptionsFromTenant);
                     }
                 } catch (Exception e) {
@@ -132,7 +136,7 @@ public class SSOService {
         String loginOptionsString;
         try {
             loginOptionsString = objectMapper.writeValueAsString(loginOptions);
-            LOG.info("Ready to write loginOption to new tenant: {}", loginOptionsString);
+            LOG.debug("Ready to write loginOption to new tenant: {}", loginOptionsString);
             subscriptions.callForTenant(tenant,
                     new Callable<String>() {
                         @Override
@@ -150,11 +154,11 @@ public class SSOService {
                                         .POST(HttpRequest.BodyPublishers.ofString(loginOptionsString))
                                         .build();
                                 HttpClient httpClient = HttpClient.newHttpClient();
-                                HttpResponse<String> resp = httpClient.send(postRequest,
+                                HttpResponse resp = httpClient.send(postRequest,
                                         HttpResponse.BodyHandlers.ofString());
-                                LOG.info("Response from writting provision sso to new tenant: {}", resp.toString());
+                                LOG.info("Response from writing provision sso to new tenant: {}", resp.toString());
                             } catch (Exception e) {
-                                LOG.error("Exception writting provision sso to new tenant: {}", e.getMessage());
+                                LOG.error("Exception writing provision sso to new tenant: {}", e.getMessage());
                                 e.printStackTrace();
                             }
                             return "success";
@@ -177,21 +181,6 @@ public class SSOService {
         });
     }
 
-    private String getBootstrapTenant() {
-        String bootstrapTenant = getEnv(C8Y_BOOTSTRAP_TENANT, DEFAULT_BOOSTRAP_TENANT);
-        return bootstrapTenant;
-    }
-
-    private String getEnv(String key, String defaultValue) {
-        String value = defaultValue;
-        try {
-            value = HtmlUtils.htmlEscape(System.getenv(key) != null ? System.getenv(key) : defaultValue);
-        } catch (SecurityException e) {
-            LOG.error(e.getMessage());
-        }
-        return value;
-    }
-
     public List<String> getProviderName() {
         return null;
     }
@@ -209,7 +198,7 @@ public class SSOService {
                                 new TypeReference<Map<String, Object>>() {
                                 });
                         String templateName = respMap.get("template").toString();
-                        LOG.info("Returned loginOptions: {} {}", resp.getStatus(), templateName);
+                        LOG.debug("Returned loginOptions: {} {}", resp.getStatus(), templateName);
                         if (resp.getStatus() == 404) {
                             LOG.info("No OAuth2 template found!");
                             respMap = null;
