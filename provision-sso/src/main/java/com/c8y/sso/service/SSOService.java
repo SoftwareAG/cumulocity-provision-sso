@@ -3,6 +3,7 @@ package com.c8y.sso.service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 
 import javax.ws.rs.core.GenericType;
@@ -28,8 +29,12 @@ import com.cumulocity.sdk.client.SDKException;
 import com.cumulocity.sdk.client.inventory.InventoryApi;
 import com.cumulocity.sdk.client.option.PagedTenantOptionCollectionRepresentation;
 import com.cumulocity.sdk.client.option.TenantOptionCollection;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import c8y.IsDevice;
 
 /**
  * This is an example service. This should be removed for your real project!
@@ -42,6 +47,7 @@ public class SSOService {
     private static final Logger LOG = LoggerFactory.getLogger(SSOService.class);
     private static final String DEFAULT_BOOSTRAP_TENANT = "t14070519";
     private static final String C8Y_BOOTSTRAP_TENANT = "C8Y_BOOTSTRAP_TENANT";
+    private static final String OAUTH_TEMPLATE_NAME = "OAuth0";
 
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -62,118 +68,77 @@ public class SSOService {
 
     @EventListener
     public void initialize(MicroserviceSubscriptionAddedEvent event) {
-        // Executed for each tenant subscribed
         String tenant = event.getCredentials().getTenant();
         String tenantFromConnector = this.restConnector.getPlatformParameters().getCumulocityCredentials()
                 .getTenantId();
-        String bootstrapTenant = getEnv(C8Y_BOOTSTRAP_TENANT, DEFAULT_BOOSTRAP_TENANT);
-        LOG.info("New subscription tenant / tenantFromConnector / bootstrapTenant: {} / {} / {}", tenant, tenantFromConnector, bootstrapTenant);
+        LOG.info("New subscription tenant / tenantFromConnector / bootstrapTenant: {} / {} / {}", tenant,
+                tenantFromConnector, getBootstrapTenant());
 
         try {
-            if (!bootstrapTenant.equals(tenant)) {
-                List<OptionRepresentation> entireOptionsList = new ArrayList<>();
-                TenantOptionCollection tenantOptionCollection = platformApi.getTenantOptionApi().getOptions();
-                PagedTenantOptionCollectionRepresentation pagedTenantOptions = tenantOptionCollection.get(1,
-                        new QueryParam(PagingParam.WITH_TOTAL_PAGES, "true"));
-                pagedTenantOptions.allPages().forEach(entireOptionsList::add);
-                pagedTenantOptions.forEach(opt -> {
-                    LOG.info("Option from tenant: {}", opt.toJSON());
-                });
-
-                final RestConnector restConnectorInjected = this.restConnector;
-                Object providerNameFromBootstrap =subscriptions.callForTenant(bootstrapTenant, new Callable<Object>() {
-                    @Override
-                    public Object call() throws Exception {
-                        Response resp = restConnectorInjected.get("/tenant/loginOptions/OAUTH2",
-                                MediaType.APPLICATION_JSON_TYPE);
-                        String respString = resp.readEntity(String.class);
-                        Map<String, Object> respMap = objectMapper.readValue(respString,
-                                new TypeReference<Map<String, Object>>() {
-                                });
-                        Object providerName = respMap.get("providerName");
-                        return providerName;
+            if (!getBootstrapTenant().equals(tenant)) {
+                listTenantOptions();
+                Map<String, Object> loginOptionsFromBoostrap = getLoginOptionsFromTenant(getBootstrapTenant());
+                // Object providerNameFromBootstrap =
+                // loginOptionsFromBoostrap.get("providerName");
+                // LOG.info("OAUTH2 providerName from bootstrapTenant: {}",
+                // providerNameFromBootstrap);
+                try {
+                    Map<String, Object> loginOptionsFromTenant = getLoginOptionsFromTenant(tenant);
+                    String templateName = loginOptionsFromTenant.get("template").toString();
+                    if (!OAUTH_TEMPLATE_NAME.equals(templateName)) {
+                        writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
+                    } else {
+                        LOG.info("Option loginOptions exist in tenant {} {}. Do nothing!", tenant,
+                                loginOptionsFromTenant);
                     }
-                });
-                LOG.info("OAUTH2 providerName from bootstrapTenant: {}", providerNameFromBootstrap);
-
-            } else {
-                final RestConnector restConnectorInternal = this.restConnector.getPlatformParameters()
-                        .createRestConnector();
-                if (restConnectorInternal == null) {
-                    LOG.info("Something is wrong with restConnectorInternal, is null!");
-                } else {
-                    Object providerName = subscriptions.callForTenant(bootstrapTenant, new Callable<Object>() {
-                        @Override
-                        public Object call() throws Exception {
-                            Response resp = restConnectorInternal.get("/tenant/loginOptions/OAUTH2",
-                                    MediaType.APPLICATION_JSON_TYPE);
-                            String respString = resp.readEntity(String.class);
-                            Map<String, Object> respMap = objectMapper.readValue(respString,
-                                    new TypeReference<Map<String, Object>>() {
-                                    });
-                            Object providerName = respMap.get("providerName");
-                            return providerName;
-                        }
-                    });
-                    LOG.info("OAUTH2 providerName from tenant: {}", providerName);
+                } catch (Exception e) {
+                    LOG.info("Ready to provision sso in new tenant!");
+                    writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
                 }
+            } else {
+                LOG.info("Susbcription from bootstrapTenant. Do nothing!");
             }
         } catch (SDKException e) {
             LOG.error("Error when retrieving option from tenant: {}", tenant);
             e.printStackTrace();
         }
-        subscriptions.callForTenant(tenant, () -> {
+    }
 
+    private String getDomainName() {
+        String domainName = null;
+        try {
             RestConnector restConnector = this.restConnector.getPlatformParameters().createRestConnector();
-            // Response resp = bootstrapRestConnector.get("/tenant/tenants/" + tenant,
-            // MediaType.APPLICATION_JSON_TYPE);
             Response resp = restConnector.get("/tenant/currentTenant", MediaType.APPLICATION_JSON_TYPE);
-            // List<Map<String, Object>> json = resp.readEntity(new
-            // GenericType<List<Map<String, Object>>>() {});
-            // String domainName = (String) json.get(0).get("domainName");
-
             String respString = resp.readEntity(String.class);
             Map<String, Object> respMap = objectMapper.readValue(respString, new TypeReference<Map<String, Object>>() {
             });
-            LOG.info("Details for tenant: {}", respMap.get("domainName"));
-            // String response = resp.readEntity(String.class);
-            // LOG.info("Details for tenant: {}", output);
+            domainName = respMap.get("domainName").toString();
+            LOG.info("DomainName for tenant: {}", domainName);
+        } catch (Exception e) {
+            LOG.error("Exception finding: domainName for tenant: {} {}", domainName, e.getMessage());
+        }
+        return domainName;
+    }
 
-            String ssoString = "{\n" +
-                    "  \"issuer\": \"https://sts.onko.net/dummy/\",\n" +
-                    "  \"redirectToPlatform\": \"https://TENANT_ID.eu-latest.onko.com/tenant/oauth\",\n" +
-                    "  \"id\": \"fghhfhgf677rf-f794-4bf3-a4b2-32e5c4fgdummyfhfhfhfh69dumm71d6\",\n" +
-                    "  \"providerName\": \"Onko WD\",\n" +
-                    "  \"logoutRequest\": {},\n" +
-                    "  \"visibleOnLoginPage\": true,\n" +
-                    "  \"signatureVerificationConfig\": {\n" +
-                    "    \"aad\": {\n" +
-                    "      \"publicKeyDiscoveryUrl\": \"https://login.onko-online.com/common/discovery/keys\"\n" +
-                    "    }\n" +
-                    "  }\n" +
-                    "}";
-            // JsonNode jsonNode = objectMapper.readTree(ssoString);
-            // Map<String, Object> map = objectMapper.readValue(ssoString, new
-            // TypeReference<Map<String, Object>>() {
-            // });
+    private void writeLoginOptionsToTenant(String tenant, Map<String, Object> loginOptionsFromBoostrap) {
+        // Object providerName = loginOptionsFromTenant.get("providerName");
+        LOG.info("Wrote provision sso to new tenant: {}", getDomainName());
+    }
 
-            // final ManagedObjectRepresentation managedObjectRepresentation = new
-            // ManagedObjectRepresentation();
-            // managedObjectRepresentation.setName("SSO-Provision-" + tenant);
-            // managedObjectRepresentation.setType("c8y_sso_provioning");
-            // managedObjectRepresentation.setProperty("sso_config", map);
-            // managedObjectRepresentation.set(new IsDevice());
-            // try {
-            // final ManagedObjectRepresentation response =
-            // inventoryApi.create(managedObjectRepresentation);
-            // LOG.info("Created Provisioning: {}", response.getId());
-            // return Optional.of(response);
-            // } catch (SDKException exception) {
-            // LOG.error("Error occurred while create a new device", exception);
-            // return null;
-            // }
-            return null;
+    private void listTenantOptions() {
+        List<OptionRepresentation> entireOptionsList = new ArrayList<>();
+        TenantOptionCollection tenantOptionCollection = platformApi.getTenantOptionApi().getOptions();
+        PagedTenantOptionCollectionRepresentation pagedTenantOptions = tenantOptionCollection.get(1,
+                new QueryParam(PagingParam.WITH_TOTAL_PAGES, "true"));
+        pagedTenantOptions.allPages().forEach(entireOptionsList::add);
+        pagedTenantOptions.forEach(opt -> {
+            LOG.info("Option from tenant: {}", opt.toJSON());
         });
+    }
+
+    private String getBootstrapTenant() {
+        String bootstrapTenant = getEnv(C8Y_BOOTSTRAP_TENANT, DEFAULT_BOOSTRAP_TENANT);
+        return bootstrapTenant;
     }
 
     private String getEnv(String key, String defaultValue) {
@@ -188,5 +153,45 @@ public class SSOService {
 
     public List<String> getProviderName() {
         return null;
+    }
+
+    private Map<String, Object> getLoginOptionsFromTenant(String tenant) {
+        final RestConnector restConnectorInjected = this.restConnector;
+        Map<String, Object> loginOptionsFromBoostrap = subscriptions.callForTenant(tenant,
+                new Callable<Map<String, Object>>() {
+                    @Override
+                    public Map<String, Object> call() throws Exception {
+                        Response resp = restConnectorInjected.get("/tenant/loginOptions/OAUTH2",
+                                MediaType.APPLICATION_JSON_TYPE);
+                        String respString = resp.readEntity(String.class);
+                        Map<String, Object> respMap = objectMapper.readValue(respString,
+                                        new TypeReference<Map<String, Object>>() {
+                                        });
+                        String templateName = respMap.get("template").toString();
+                        LOG.info("Returned loginOptions: {} {}", resp.getStatus(), templateName);
+                        return respMap;
+                    }
+                });
+        return loginOptionsFromBoostrap;
+    }
+
+    private Optional<ManagedObjectRepresentation> createMO(String tenant, String ssoString)
+            throws JsonMappingException, JsonProcessingException {
+        Map<String, Object> map = objectMapper.readValue(ssoString, new TypeReference<Map<String, Object>>() {
+        });
+
+        final ManagedObjectRepresentation managedObjectRepresentation = new ManagedObjectRepresentation();
+        managedObjectRepresentation.setName("SSO-Provision-" + tenant);
+        managedObjectRepresentation.setType("c8y_sso_provioning");
+        managedObjectRepresentation.setProperty("sso_config", map);
+        managedObjectRepresentation.set(new IsDevice());
+        try {
+            final ManagedObjectRepresentation response = inventoryApi.create(managedObjectRepresentation);
+            LOG.info("Created Provisioning: {}", response.getId());
+            return Optional.of(response);
+        } catch (SDKException exception) {
+            LOG.error("Error occurred while create a new device", exception);
+            return null;
+        }
     }
 }
