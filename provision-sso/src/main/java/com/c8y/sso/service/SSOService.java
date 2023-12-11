@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.util.HtmlUtils;
 
 import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionAddedEvent;
+import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionRemovedEvent;
 import com.cumulocity.microservice.subscription.service.MicroserviceSubscriptionsService;
 import com.cumulocity.rest.representation.inventory.ManagedObjectRepresentation;
 import com.cumulocity.rest.representation.tenant.OptionRepresentation;
@@ -65,7 +66,6 @@ public class SSOService {
     @Value("${C8Y.baseURL}")
     private String baseUrl;
 
-
     @Value("${C8Y.bootstrap.tenant}")
     private String bootstrapTeannt;
 
@@ -83,7 +83,7 @@ public class SSOService {
 
         try {
             if (!bootstrapTeannt.equals(tenant)) {
-                //listTenantOptions();
+                // listTenantOptions();
                 Map<String, Object> loginOptionsFromBoostrap = getLoginOptionsFromTenant(bootstrapTeannt);
                 try {
                     Map<String, Object> loginOptionsFromTenant = getLoginOptionsFromTenant(tenant);
@@ -97,6 +97,26 @@ public class SSOService {
                     LOG.info("Ready to provision sso in new tenant!");
                     writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
                 }
+            } else {
+                LOG.info("Susbcription from bootstrapTenant. Do nothing!");
+            }
+        } catch (SDKException e) {
+            LOG.error("Error when retrieving option from tenant: {}", tenant);
+            e.printStackTrace();
+        }
+    }
+
+    @EventListener
+    public void unsubsribe(MicroserviceSubscriptionRemovedEvent event) {
+        String tenant=event.getTenant();
+        //String tenant = event.getCredentials().getTenant();
+        LOG.info("New subscription tenant / bootstrapTenant: {} / {} ", tenant, bootstrapTeannt);
+
+        try {
+            if (!bootstrapTeannt.equals(tenant)) {
+                LOG.info("Ready to provision sso in new tenant!");
+                deleteLoginOptionsFromTenant(tenant);
+                
             } else {
                 LOG.info("Susbcription from bootstrapTenant. Do nothing!");
             }
@@ -120,6 +140,39 @@ public class SSOService {
             LOG.error("Exception finding: domainName for tenant: {} {}", domainName, e.getMessage());
         }
         return domainName;
+    }
+
+    private void deleteLoginOptionsFromTenant(String tenant) {
+
+        LOG.debug("Ready to delete loginOption from tenant.");
+        subscriptions.callForTenant(tenant,
+                new Callable<String>() {
+                    @Override
+                    public String call() throws Exception {
+                        try {
+                            LOG.info("Preparing to delete provision sso from tenant.");
+                            String deleteUrl = baseUrl + "/tenant/loginOptions/OAUTH2";
+                            HttpRequest deleteRequest = HttpRequest.newBuilder()
+                                    .uri(URI.create((deleteUrl)))
+                                    .headers("Authorization",
+                                            subscriptions.getCredentials(subscriptions.getTenant())
+                                                    .get().toCumulocityCredentials().getAuthenticationString(),
+                                            "Accept", "application/json",
+                                            "Content-Type", "application/json")
+                                    .DELETE()
+                                    .build();
+                            HttpClient httpClient = HttpClient.newHttpClient();
+                            HttpResponse resp = httpClient.send(deleteRequest,
+                                    HttpResponse.BodyHandlers.ofString());
+                            LOG.info("Response from deleting provision sso from tenant: {}", resp.toString());
+                        } catch (Exception e) {
+                            LOG.error("Exception deleting provision sso from tenant: {}", e.getMessage());
+                            e.printStackTrace();
+                        }
+                        return "success";
+                    }
+                });
+        LOG.info("Deleted provision sso from tenant: {}", getDomainName());
     }
 
     private void writeLoginOptionsToTenant(String tenant, Map<String, Object> loginOptions) {
