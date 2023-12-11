@@ -34,28 +34,24 @@ graph TD
 
   subgraph Microservice
     M((SSO Configuration Microservice))
-    M -->|Subscribes to| B
+    B -->|Gets configuration| M
   end
 
   subgraph Subtenant 1
     C((Cumulocity IoT Platform))
-    C -->|Receives Copied SSO Configuration| B
   end
 
   subgraph Subtenant 2
     D((Cumulocity IoT Platform))
-    D -->|Receives Copied SSO Configuration| B
   end
 
   subgraph Subtenant N
     E((Cumulocity IoT Platform))
-    E -->|Receives Copied SSO Configuration| B
   end
 
   M -->|Copies SSO Configuration to| C
   M -->|Copies SSO Configuration to| D
   M -->|Copies SSO Configuration to| E
-  M -->|Copies SSO Configuration to| ...
 
 ```
 
