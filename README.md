@@ -65,7 +65,7 @@ Currently deletion of the configuration in case of unsubsribe is not implemented
 It is also not implemented that a redeploy will be tried as soon as the configuration on the parent tenant changes.
 
 ### Contribution
-> **Pull Requests adding mappings for other data formats or additional functionaly are welcomed!**
+> **Pull Requests are welcomed!**
 
 ## Prerequisites
 In your Cumulocity IoT Tenant you must have the **microservice** feature subscribed. Per default this feature is not
