@@ -23,6 +23,7 @@ import org.springframework.web.util.HtmlUtils;
 
 import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionAddedEvent;
 import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionRemovedEvent;
+import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionsInitializedEvent;
 import com.cumulocity.microservice.subscription.service.MicroserviceSubscriptionsService;
 import com.cumulocity.rest.representation.inventory.ManagedObjectRepresentation;
 import com.cumulocity.rest.representation.tenant.OptionRepresentation;
@@ -76,8 +77,13 @@ public class SSOService {
         this.subscriptions = subscriptions;
     }
 
+    // @EventListener
+    // public void initialize(MicroserviceSubscriptionsInitializedEvent event) {
+    //     LOG.info("SSOService initialized in bootstrapTenant: {}", bootstrapTeannt);
+    // }
+
     @EventListener
-    public void initialize(MicroserviceSubscriptionAddedEvent event) {
+    public void provisionSSO(MicroserviceSubscriptionAddedEvent event) {
         String tenant = event.getCredentials().getTenant();
         LOG.info("New subscription tenant / bootstrapTenant: {} / {} ", tenant, bootstrapTeannt);
 
