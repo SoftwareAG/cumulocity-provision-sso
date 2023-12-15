@@ -6,8 +6,8 @@
 	},
 	"isolation": "MULTI_TENANT",
 	"resources": {
-        "cpu": "0.125",
-        "memory": "512M"
+        "cpu": "0.5",
+        "memory": "2Gi"
     },
 	"requiredRoles": [
 		"ROLE_INVENTORY_READ",
@@ -27,7 +27,7 @@
 			"path": "/health",
 			"port": 80
 		},
-		"initialDelaySeconds": 30,
+		"initialDelaySeconds": 60,
 		"periodSeconds": 10
 	},
 	"readinessProbe": {
@@ -35,7 +35,7 @@
 			"path": "/health",
 			"port": 80
 		},
-		"initialDelaySeconds": 10,
+		"initialDelaySeconds": 60,
 		"periodSeconds": 10
 	}
 }

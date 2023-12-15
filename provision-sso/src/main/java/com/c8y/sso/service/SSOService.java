@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 
+import javax.validation.constraints.NotNull;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
@@ -68,68 +69,13 @@ public class SSOService {
     private String baseUrl;
 
     @Value("${C8Y.bootstrap.tenant}")
-    private String bootstrapTeannt;
+    private String bootstrapTenant;
 
     private final MicroserviceSubscriptionsService subscriptions;
 
     public SSOService(InventoryApi inventoryApi, MicroserviceSubscriptionsService subscriptions) {
         this.inventoryApi = inventoryApi;
         this.subscriptions = subscriptions;
-    }
-
-    // @EventListener
-    // public void initialize(MicroserviceSubscriptionsInitializedEvent event) {
-    //     LOG.info("SSOService initialized in bootstrapTenant: {}", bootstrapTeannt);
-    // }
-
-    @EventListener
-    public void provisionSSO(MicroserviceSubscriptionAddedEvent event) {
-        String tenant = event.getCredentials().getTenant();
-        LOG.info("New subscription tenant / bootstrapTenant: {} / {} ", tenant, bootstrapTeannt);
-
-        try {
-            if (!bootstrapTeannt.equals(tenant)) {
-                // listTenantOptions();
-                Map<String, Object> loginOptionsFromBoostrap = getLoginOptionsFromTenant(bootstrapTeannt);
-                try {
-                    Map<String, Object> loginOptionsFromTenant = getLoginOptionsFromTenant(tenant);
-                    if (loginOptionsFromTenant == null) {
-                        writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
-                    } else {
-                        LOG.debug("Option loginOptions exist in tenant {} {}. Do nothing!", tenant,
-                                loginOptionsFromTenant);
-                    }
-                } catch (Exception e) {
-                    LOG.info("Ready to provision sso in new tenant!");
-                    writeLoginOptionsToTenant(tenant, loginOptionsFromBoostrap);
-                }
-            } else {
-                LOG.info("Susbcription from bootstrapTenant. Do nothing!");
-            }
-        } catch (SDKException e) {
-            LOG.error("Error when retrieving option from tenant: {}", tenant);
-            e.printStackTrace();
-        }
-    }
-
-    @EventListener
-    public void unsubsribe(MicroserviceSubscriptionRemovedEvent event) {
-        String tenant=event.getTenant();
-        //String tenant = event.getCredentials().getTenant();
-        LOG.info("New subscription tenant / bootstrapTenant: {} / {} ", tenant, bootstrapTeannt);
-
-        try {
-            if (!bootstrapTeannt.equals(tenant)) {
-                LOG.info("Ready to provision sso in new tenant!");
-                deleteLoginOptionsFromTenant(tenant);
-                
-            } else {
-                LOG.info("Susbcription from bootstrapTenant. Do nothing!");
-            }
-        } catch (SDKException e) {
-            LOG.error("Error when retrieving option from tenant: {}", tenant);
-            e.printStackTrace();
-        }
     }
 
     private String getDomainName() {
@@ -146,93 +92,6 @@ public class SSOService {
             LOG.error("Exception finding: domainName for tenant: {} {}", domainName, e.getMessage());
         }
         return domainName;
-    }
-
-    private void deleteLoginOptionsFromTenant(String tenant) {
-
-        LOG.debug("Ready to delete loginOption from tenant.");
-        subscriptions.callForTenant(tenant,
-                new Callable<String>() {
-                    @Override
-                    public String call() throws Exception {
-                        try {
-                            LOG.info("Preparing to delete provision sso from tenant.");
-                            String deleteUrl = baseUrl + "/tenant/loginOptions/OAUTH2";
-                            HttpRequest deleteRequest = HttpRequest.newBuilder()
-                                    .uri(URI.create((deleteUrl)))
-                                    .headers("Authorization",
-                                            subscriptions.getCredentials(subscriptions.getTenant())
-                                                    .get().toCumulocityCredentials().getAuthenticationString(),
-                                            "Accept", "application/json",
-                                            "Content-Type", "application/json")
-                                    .DELETE()
-                                    .build();
-                            HttpClient httpClient = HttpClient.newHttpClient();
-                            HttpResponse resp = httpClient.send(deleteRequest,
-                                    HttpResponse.BodyHandlers.ofString());
-                            LOG.info("Response from deleting provision sso from tenant: {}", resp.toString());
-                        } catch (Exception e) {
-                            LOG.error("Exception deleting provision sso from tenant: {}", e.getMessage());
-                            e.printStackTrace();
-                        }
-                        return "success";
-                    }
-                });
-        LOG.info("Deleted provision sso from tenant: {}", getDomainName());
-    }
-
-    private void writeLoginOptionsToTenant(String tenant, Map<String, Object> loginOptions) {
-        // update loginOptions
-        loginOptions.put(REDIRECT_TO_PLATFORM, "https://" + getDomainName() + "/tenant/oauth");
-        loginOptions.remove(TEMPLATE_ID);
-        loginOptions.remove("self");
-
-        String loginOptionsString;
-        try {
-            loginOptionsString = objectMapper.writeValueAsString(loginOptions);
-            LOG.debug("Ready to write loginOption to new tenant: {}", loginOptionsString);
-            subscriptions.callForTenant(tenant,
-                    new Callable<String>() {
-                        @Override
-                        public String call() throws Exception {
-                            try {
-                                LOG.info("Preparing to write provision sso to new tenant.");
-                                String postUrl = baseUrl + "/tenant/loginOptions/OAUTH2";
-                                HttpRequest postRequest = HttpRequest.newBuilder()
-                                        .uri(URI.create((postUrl)))
-                                        .headers("Authorization",
-                                                subscriptions.getCredentials(subscriptions.getTenant())
-                                                        .get().toCumulocityCredentials().getAuthenticationString(),
-                                                "Accept", "application/json",
-                                                "Content-Type", "application/json")
-                                        .POST(HttpRequest.BodyPublishers.ofString(loginOptionsString))
-                                        .build();
-                                HttpClient httpClient = HttpClient.newHttpClient();
-                                HttpResponse resp = httpClient.send(postRequest,
-                                        HttpResponse.BodyHandlers.ofString());
-                                LOG.info("Response from writing provision sso to new tenant: {}", resp.toString());
-                            } catch (Exception e) {
-                                LOG.error("Exception writing provision sso to new tenant: {}", e.getMessage());
-                                e.printStackTrace();
-                            }
-                            return "success";
-                        }
-                    });
-            LOG.info("Wrote provision sso to new tenant: {}", getDomainName());
-        } catch (JsonProcessingException e) {
-            LOG.error("Serializing LoginOptions failed: {}", e.getMessage());
-        }
-    }
-
-    private void listTenantOptions() {
-        List<OptionRepresentation> entireOptionsList = new ArrayList<>();
-        TenantOptionCollection tenantOptionCollection = platformApi.getTenantOptionApi().getOptions();
-        PagedTenantOptionCollectionRepresentation pagedTenantOptions = tenantOptionCollection.get(1,
-                new QueryParam(PagingParam.WITH_TOTAL_PAGES, "true"));
-        pagedTenantOptions.allPages().forEach(entireOptionsList::add);
-        pagedTenantOptions.forEach(opt -> {
-            LOG.info("Option from tenant: {}", opt.toJSON());
-        });
     }
 
     public List<String> getProviderName() {
@@ -263,23 +122,127 @@ public class SSOService {
         return loginOptionsFromBoostrap;
     }
 
-    private Optional<ManagedObjectRepresentation> createMO(String tenant, String ssoString)
-            throws JsonMappingException, JsonProcessingException {
-        Map<String, Object> map = objectMapper.readValue(ssoString, new TypeReference<Map<String, Object>>() {
-        });
+    public String getConfig(@NotNull String tenant) {
+        LOG.debug("Ready to get loginOption from tenant {}.", tenant);
 
-        final ManagedObjectRepresentation managedObjectRepresentation = new ManagedObjectRepresentation();
-        managedObjectRepresentation.setName("SSO-Provision-" + tenant);
-        managedObjectRepresentation.setType("c8y_sso_provioning");
-        managedObjectRepresentation.setProperty("sso_config", map);
-        managedObjectRepresentation.set(new IsDevice());
-        try {
-            final ManagedObjectRepresentation response = inventoryApi.create(managedObjectRepresentation);
-            LOG.info("Created Provisioning: {}", response.getId());
-            return Optional.of(response);
-        } catch (SDKException exception) {
-            LOG.error("Error occurred while create a new device", exception);
-            return null;
+        String result = subscriptions.callForTenant(tenant,
+                new Callable<String>() {
+                    @Override
+                    public String call() throws Exception {
+                        try {
+                            LOG.info("Preparing to get loginOptions from tenant.");
+                            String getUrl = baseUrl + "/tenant/loginOptions/OAUTH2";
+                            HttpRequest getRequest = HttpRequest.newBuilder()
+                                    .uri(URI.create((getUrl)))
+                                    .headers("Authorization",
+                                            subscriptions.getCredentials(subscriptions.getTenant())
+                                                    .get().toCumulocityCredentials().getAuthenticationString(),
+                                            "Accept", "application/json",
+                                            "Content-Type", "application/json")
+                                    .GET()
+                                    .build();
+                            HttpClient httpClient = HttpClient.newHttpClient();
+                            HttpResponse<String> resp = httpClient.send(getRequest,
+                                HttpResponse.BodyHandlers.ofString()); 
+                            LOG.info("Response from getting loginOptions from tenant: {}", resp.body());
+                            return resp.body();
+                        } catch (Exception e) {
+                            LOG.error("Exception deleting provision sso from tenant: {}", e.getMessage());
+                            e.printStackTrace();
+                            throw (e);
+                        }
+                    }
+                });
+        return result;
+    }
+
+    public String postConfig(@NotNull String tenant) {
+        if (!bootstrapTenant.equals(tenant)) {
+            // write loginOptions only if tenant is not Bootstrap tenant
+            Map<String, Object> loginOptions = getLoginOptionsFromTenant(bootstrapTenant);
+
+            loginOptions.put(REDIRECT_TO_PLATFORM, "https://" + getDomainName() + "/tenant/oauth");
+            loginOptions.remove(TEMPLATE_ID);
+            loginOptions.remove("self");
+
+            String loginOptionsString;
+            try {
+                loginOptionsString = objectMapper.writeValueAsString(loginOptions);
+                LOG.debug("Ready to write loginOption to new tenant: {}", loginOptionsString);
+                String result = subscriptions.callForTenant(tenant,
+                        new Callable<String>() {
+                            @Override
+                            public String call() throws Exception {
+                                try {
+                                    LOG.info("Preparing to write provision sso to new tenant.");
+                                    String postUrl = baseUrl + "/tenant/loginOptions/OAUTH2";
+                                    HttpRequest postRequest = HttpRequest.newBuilder()
+                                            .uri(URI.create((postUrl)))
+                                            .headers("Authorization",
+                                                    subscriptions.getCredentials(subscriptions.getTenant())
+                                                            .get().toCumulocityCredentials().getAuthenticationString(),
+                                                    "Accept", "application/json",
+                                                    "Content-Type", "application/json")
+                                            .POST(HttpRequest.BodyPublishers.ofString(loginOptionsString))
+                                            .build();
+                                    HttpClient httpClient = HttpClient.newHttpClient();
+                                    HttpResponse<String> resp = httpClient.send(postRequest,
+                                HttpResponse.BodyHandlers.ofString()); 
+                                    LOG.info("Response from writing provision sso to new tenant: {}", resp.body());
+                                return resp.body().toString();
+                                } catch (Exception e) {
+                                    LOG.error("Exception writing provision sso to new tenant: {}", e.getMessage());
+                                    e.printStackTrace();
+                                    throw (e);
+                                }
+                            }
+                        });
+                LOG.info("Wrote provision sso to new tenant: {} with domain name {}", tenant, getDomainName());
+                return result;
+            } catch (JsonProcessingException e) {
+                LOG.error("Serializing LoginOptions failed: {}", e.getMessage());
+                return "";
+            }
+        } else {
+            return "";
+        }
+    }
+
+    public String deleteConfig(@NotNull String tenant) {
+        if (!bootstrapTenant.equals(tenant)) {
+            LOG.debug("Ready to delete loginOption from tenant.");
+            String result = subscriptions.callForTenant(tenant,
+                    new Callable<String>() {
+                        @Override
+                        public String call() throws Exception {
+                            try {
+                                LOG.info("Preparing to delete provision sso from tenant.");
+                                String deleteUrl = baseUrl + "/tenant/loginOptions/OAUTH2";
+                                HttpRequest deleteRequest = HttpRequest.newBuilder()
+                                        .uri(URI.create((deleteUrl)))
+                                        .headers("Authorization",
+                                                subscriptions.getCredentials(subscriptions.getTenant())
+                                                        .get().toCumulocityCredentials().getAuthenticationString(),
+                                                "Accept", "application/json",
+                                                "Content-Type", "application/json")
+                                        .DELETE()
+                                        .build();
+                                HttpClient httpClient = HttpClient.newHttpClient();
+                                HttpResponse resp = httpClient.send(deleteRequest,
+                                        HttpResponse.BodyHandlers.ofString());
+                                LOG.info("Response from deleting provision sso from tenant: {}", resp.toString());
+                                return resp.body().toString();
+                            } catch (Exception e) {
+                                LOG.error("Exception deleting provision sso from tenant: {}", e.getMessage());
+                                e.printStackTrace();
+                                throw (e);
+                            }
+                        }
+                    });
+            LOG.info("Deleted provision sso from tenant: {} with domain name {}", tenant, getDomainName());
+            return result;
+        } else {
+            return "";
         }
     }
 }
