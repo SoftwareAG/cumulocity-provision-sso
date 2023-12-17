@@ -18,30 +18,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.web.util.HtmlUtils;
 
-import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionAddedEvent;
-import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionRemovedEvent;
-import com.cumulocity.microservice.subscription.model.MicroserviceSubscriptionsInitializedEvent;
 import com.cumulocity.microservice.subscription.service.MicroserviceSubscriptionsService;
-import com.cumulocity.rest.representation.inventory.ManagedObjectRepresentation;
-import com.cumulocity.rest.representation.tenant.OptionRepresentation;
-import com.cumulocity.sdk.client.PagingParam;
 import com.cumulocity.sdk.client.Platform;
-import com.cumulocity.sdk.client.QueryParam;
 import com.cumulocity.sdk.client.RestConnector;
-import com.cumulocity.sdk.client.SDKException;
 import com.cumulocity.sdk.client.inventory.InventoryApi;
-import com.cumulocity.sdk.client.option.PagedTenantOptionCollectionRepresentation;
-import com.cumulocity.sdk.client.option.TenantOptionCollection;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import c8y.IsDevice;
 
 /**
  * This is an example service. This should be removed for your real project!
